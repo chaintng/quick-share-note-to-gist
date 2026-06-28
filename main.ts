@@ -331,7 +331,7 @@ export default class QuickShareNotePlugin extends Plugin {
 	async uploadImageToHackmd(noteId: string, imageData: ArrayBuffer, file: TFile): Promise<string> {
 		this.ensureHackmdToken();
 
-		const uploadImage = imageData.byteLength > HACKMD_MAX_IMAGE_BYTES
+		const uploadImage = imageData.byteLength > HACKMD_MAX_IMAGE_BYTES || !this.isHackmdSupportedImage(file)
 			? await this.resizeImageForHackmd(imageData, file)
 			: { data: imageData, fileName: file.name, mimeType: this.getMimeType(file) };
 
@@ -356,12 +356,14 @@ export default class QuickShareNotePlugin extends Plugin {
 	): Promise<{ data: ArrayBuffer; fileName: string; mimeType: string }> {
 		if (!this.canResizeImage(file)) {
 			throw new Error(
-				`HackMD image upload for ${file.name} is too large: ${this.formatBytes(imageData.byteLength)}. HackMD allows images up to ${this.formatBytes(HACKMD_MAX_IMAGE_BYTES)}, and this image type cannot be resized automatically.`,
+				`HackMD image upload for ${file.name} is not supported. HackMD accepts JPEG/PNG images up to ${this.formatBytes(HACKMD_MAX_IMAGE_BYTES)}, and this image type cannot be converted automatically.`,
 			);
 		}
 
 		const originalMimeType = this.getMimeType(file);
-		const outputMimeType = originalMimeType === 'image/png' ? 'image/jpeg' : originalMimeType;
+		const outputMimeType = this.isHackmdSupportedImage(file) && originalMimeType !== 'image/png'
+			? originalMimeType
+			: 'image/jpeg';
 		const imageBitmap = await createImageBitmap(new Blob([imageData], { type: originalMimeType }));
 
 		try {
@@ -370,6 +372,7 @@ export default class QuickShareNotePlugin extends Plugin {
 				fileName: file.name,
 				from: this.formatBytes(imageData.byteLength),
 				to: this.formatBytes(resizedImage.byteLength),
+				mimeType: outputMimeType,
 			});
 
 			return {
@@ -517,12 +520,16 @@ export default class QuickShareNotePlugin extends Plugin {
 	}
 
 	canResizeImage(file: TFile): boolean {
-		return ['jpg', 'jpeg', 'png', 'webp'].includes(file.extension.toLowerCase());
+		return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'svg'].includes(file.extension.toLowerCase());
 	}
 
 	getResizedFileName(file: TFile, mimeType: string): string {
 		const extension = mimeType === 'image/jpeg' ? 'jpg' : file.extension.toLowerCase();
 		return `${file.basename}.${extension}`;
+	}
+
+	isHackmdSupportedImage(file: TFile): boolean {
+		return ['jpg', 'jpeg', 'png'].includes(file.extension.toLowerCase());
 	}
 
 	ensureHackmdToken() {

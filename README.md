@@ -33,7 +33,7 @@ After enabling the plugin, go to the plugin settings to configure the following 
 - Publish notes through multiple providers: HackMD or GitHub gist.
 - New HackMD notes are created readable by everyone with the link, while editing stays owner-only.
 - Upload images to Imgur for GitHub gist publishing.
-- Upload images directly to HackMD for HackMD publishing. Images over 1 MB are resized before upload when possible.
+- Upload images directly to HackMD for HackMD publishing. Images over 1 MB are resized before upload when possible, and unsupported formats are converted to JPEG when possible.
 - Option to include or exclude frontmatter in the published note.
 - Option to include or exclude the filename H1 in the published note.
 - Copy published URL into clipboard, and save it in frontmatter.
