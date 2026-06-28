@@ -1,7 +1,7 @@
 {
 	"name": "quick-share-note-to-gist",
 	"version": "1.0.18",
-	"description": "Quick share notes to GitHub gist and its image by upload images to Imgur (https://github.com/chaintng/quick-share-note-to-gist)",
+	"description": "Quick share notes through multiple providers. HackMD is recommended, with GitHub gist also supported (https://github.com/chaintng/quick-share-note-to-gist)",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
