@@ -1,7 +1,7 @@
 {
   "id": "quick-share-note-to-gist",
   "name": "Quick Share Note to gist",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "minAppVersion": "0.15.0",
   "description": "Quick share notes through multiple providers. HackMD is recommended, with GitHub gist also supported.",
   "author": "Por Chainarong Tangsurakit",
