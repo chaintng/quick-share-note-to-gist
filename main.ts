@@ -41,6 +41,11 @@ interface AttachmentMatch {
 	file: TFile;
 }
 
+interface ObsidianEmbedTarget {
+	linkpath: string;
+	subpath: string | null;
+}
+
 export default class QuickShareNotePlugin extends Plugin {
 	settings: QuickShareNotePluginSettings;
 
@@ -97,14 +102,103 @@ export default class QuickShareNotePlugin extends Plugin {
 		const contentWithoutFrontmatter = content.replace(frontmatter, '');
 		const fileNameWithoutSuffix = activeFile.name.replace(/\.[^/.]+$/, '');
 		const header = this.settings.showFilenameHeader ? `# ${fileNameWithoutSuffix}\n\n` : '';
+		const expandedContent = await this.expandMarkdownEmbeds(contentWithoutFrontmatter, activeFile.path, new Set([activeFile.path]));
 
 		return {
-			contentToPublish: frontmatter + header + contentWithoutFrontmatter,
+			contentToPublish: frontmatter + header + expandedContent,
 			fileNameWithoutSuffix,
 			gistId: gistIdMatch ? gistIdMatch[1] : null,
 			hackmdNoteId: hackmdNoteIdMatch ? hackmdNoteIdMatch[1] : null,
 			hackmdPublishUrl: hackmdPublishUrlMatch ? hackmdPublishUrlMatch[1] : null,
 		};
+	}
+
+	async expandMarkdownEmbeds(content: string, sourcePath: string, seenPaths: Set<string>): Promise<string> {
+		const embedRegex = /!\[\[([^\]]+)\]\]/g;
+		let expandedContent = content;
+		const sourceDirectory = sourcePath.replace(/[^/]+$/, '');
+		const matches = Array.from(content.matchAll(embedRegex));
+
+		for (const match of matches) {
+			const markdown = match[0];
+			const target = this.parseObsidianEmbedTarget(match[1]);
+			const linkedFile = this.app.metadataCache.getFirstLinkpathDest(target.linkpath, sourceDirectory);
+
+			if (!linkedFile || this.isImageFile(linkedFile) || linkedFile.extension.toLowerCase() !== 'md') {
+				continue;
+			}
+
+			if (seenPaths.has(linkedFile.path)) {
+				expandedContent = expandedContent.replace(markdown, '');
+				continue;
+			}
+
+			seenPaths.add(linkedFile.path);
+			const linkedContent = await this.app.vault.read(linkedFile);
+			const linkedBody = this.removeFrontmatter(linkedContent);
+			const sectionContent = target.subpath
+				? this.extractMarkdownSection(linkedBody, target.subpath) ?? linkedBody
+				: linkedBody;
+			const nestedContent = await this.expandMarkdownEmbeds(sectionContent.trim(), linkedFile.path, seenPaths);
+			expandedContent = expandedContent.replace(markdown, nestedContent);
+			seenPaths.delete(linkedFile.path);
+		}
+
+		return expandedContent;
+	}
+
+	parseObsidianEmbedTarget(rawTarget: string): ObsidianEmbedTarget {
+		const withoutAlias = rawTarget.split('|')[0].trim();
+		const [linkpath, ...subpathParts] = withoutAlias.split('#');
+		const subpath = subpathParts.length > 0 ? subpathParts.join('#').trim() : null;
+
+		return {
+			linkpath: linkpath.trim(),
+			subpath: subpath && subpath.length > 0 ? subpath : null,
+		};
+	}
+
+	removeFrontmatter(content: string): string {
+		return content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+	}
+
+	extractMarkdownSection(content: string, heading: string): string | null {
+		const lines = content.split('\n');
+		const normalizedHeading = this.normalizeHeading(heading);
+		let startIndex = -1;
+		let headingLevel = 0;
+
+		for (let index = 0; index < lines.length; index++) {
+			const match = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[index]);
+			if (!match) {
+				continue;
+			}
+
+			if (this.normalizeHeading(match[2]) === normalizedHeading) {
+				startIndex = index;
+				headingLevel = match[1].length;
+				break;
+			}
+		}
+
+		if (startIndex === -1) {
+			return null;
+		}
+
+		let endIndex = lines.length;
+		for (let index = startIndex + 1; index < lines.length; index++) {
+			const match = /^(#{1,6})\s+/.exec(lines[index]);
+			if (match && match[1].length <= headingLevel) {
+				endIndex = index;
+				break;
+			}
+		}
+
+		return lines.slice(startIndex, endIndex).join('\n');
+	}
+
+	normalizeHeading(value: string): string {
+		return value.trim().replace(/\s+/g, ' ').toLowerCase();
 	}
 
 	async publishToGist(activeFile: TFile, preparedNote: PreparedNote): Promise<PublishedNote> {
@@ -296,8 +390,13 @@ export default class QuickShareNotePlugin extends Plugin {
 		let match;
 
 		while ((match = imageRegex.exec(content)) !== null) {
-			const attachFile = this.app.metadataCache.getFirstLinkpathDest(match[1], notePath);
+			const target = this.parseObsidianEmbedTarget(match[1]);
+			const attachFile = this.app.metadataCache.getFirstLinkpathDest(target.linkpath, notePath);
 			if (attachFile == null) {
+				continue;
+			}
+
+			if (!this.isImageFile(attachFile)) {
 				continue;
 			}
 
@@ -530,6 +629,10 @@ export default class QuickShareNotePlugin extends Plugin {
 
 	isHackmdSupportedImage(file: TFile): boolean {
 		return ['jpg', 'jpeg', 'png'].includes(file.extension.toLowerCase());
+	}
+
+	isImageFile(file: TFile): boolean {
+		return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'svg'].includes(file.extension.toLowerCase());
 	}
 
 	ensureHackmdToken() {
